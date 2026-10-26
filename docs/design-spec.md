@@ -1,6 +1,10 @@
 # claude-code-ha-notify — design
 
-Status: design agreed 2026-10-26, nothing built yet.
+Status: built 2026-10-26. Both halves are written and in CI. The Home Assistant
+side is confirmed working on a live instance: a webhook event reaches the phone
+with buttons. The Claude Code plugin is not yet installed anywhere, and
+`master-table-analysis` has not been migrated (section 9).
+
 Origin: the hook and Home Assistant setup built in the `master-table-analysis` project (commits `5cc8a91a`, `e534cf39`).
 
 ## 1. Purpose
@@ -186,14 +190,39 @@ No version field for now; add one only if the format changes.
 - `tests/`: dry-run cases with `CLAUDE_NOTIFY_DRY_RUN=1`: not muted (sent), muted stop (not sent), muted clear (sent), expired mute (sent), missing URL (logs, exit 0), unknown argument to `notify-mute` (usage, exit 2), TLS flag selection.
 - A full Home Assistant config check in CI is possible but heavy; leave it out at first.
 
-## 8. To verify while building
+## 8. Verified while building
 
-1. Does the `!` prompt prefix find `bin/notify-mute` on the PATH? The docs only say `bin/` is on the Bash tool's PATH. If it doesn't, document the slash command as the main toggle.
-2. Does `action: !secret claude_code_notify_service` work in a script and an automation? If not, use a script variable, or a single helper script that wraps the notify call.
-3. Minimum Home Assistant version for the `triggers:` / `trigger:` / `action:` syntax used in the YAML.
-4. Marketplace naming rules for `ha-notify`.
-5. `input_datetime`: with `initial:`, the value resets on every restart; without it, the first install starts at 00:00. Pick one behaviour and document it.
-6. Is `CLAUDE_PROJECT_DIR` always the same directory as the git top level that `notify-mute` falls back to? If not, the hook and the toggle could look at different mute files.
+All six are settled. Items 2 and 5 were confirmed against a live Home Assistant;
+the rest were verified locally.
+
+| # | Question | Answer |
+|---|---|---|
+| 1 | Does `!` find `bin/notify-mute` on the PATH? | **Yes.** Claude Code injects `<plugin>/bin` into the Bash tool's PATH — it appears there even for a plugin version whose directory no longer exists. `! notify-mute on` works, and the slash command stays as the discoverable route |
+| 2 | Does `action: !secret ...` work? | **Yes.** Check configuration passes, and a script trace shows the resolved action name, so the secret is substituted before validation. No script variable or wrapper needed |
+| 3 | Minimum Home Assistant version | **2024.10**, from the plural `triggers:` / `conditions:` / `actions:` keys and `action:` service calls. Derived from the syntax used, not tested against older versions |
+| 4 | Marketplace naming rules for `ha-notify` | Fine. `claude plugin validate --strict` passes on both manifests; only `claude-` prefixes are reserved |
+| 5 | `input_datetime` `initial:` | **Omit it**, so the times survive a restart. A fresh install therefore starts at 00:00, so the night schedule no-ops while the two times are equal rather than flipping night mode at midnight. Setting them is an install step |
+| 6 | Is `CLAUDE_PROJECT_DIR` the git top level? | **Not reliably — and it is absent entirely** from the Bash tool environment, where `notify-mute` runs. Both scripts now resolve the project through one shared `lib/project.sh`, preferring the git root, so they cannot disagree about which mute file to read |
+
+### 8b. Three things this design did not anticipate
+
+Each cost a round trip on the first real install, and each is now covered by a
+test or by the install guide.
+
+1. **A package is not the same as a UI export.** Home Assistant merges packages
+   with `_recursive_merge`, which skips empty dict values outright. The
+   `selector: {text: {}}` that the UI exports — and that appendix B contains —
+   arrives as `selector: {}` and is rejected with "Only one type can be
+   specified". The same YAML in `scripts.yaml` is fine. `tests/check-ha-package.py`
+   now fails on any empty mapping.
+2. **The notify entity is not the notify action.** The companion app registers
+   both `notify.<device>` (an entity) and `notify.mobile_app_<device>` (an
+   action) and only the action takes a `data:` block — which is where the
+   buttons, the `tag` and the interruption level live. `notify.send_message`
+   has no `data` field at all, so the legacy action is not an old spelling to
+   be modernised. Using the entity id gives "Action notify.<name> not found".
+3. **The webhook URL needs the port.** Home Assistant listens on 8123, and a
+   URL without it connects to nothing unless a reverse proxy is in front.
 
 ## 9. Migrating master-table-analysis
 
