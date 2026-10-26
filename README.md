@@ -50,21 +50,45 @@ Full steps, and what to check when nothing arrives:
 
 ### Part 2 — Claude Code
 
+In an interactive Claude Code session:
+
 ```
 /plugin install ha-notify --marketplace PProvost/claude-code-ha-notify
 ```
 
-The install asks for your **Home Assistant webhook URL**. The webhook ID in that
-URL is effectively a password, so it is stored as a sensitive value — in the
-macOS Keychain, or in `~/.claude/.credentials.json` on Linux — not in
-`settings.json`.
+`/plugin` is not available everywhere — the VS Code extension and SDK sessions
+do not have it. From a shell, which works anywhere:
 
-Two optional settings, under `/plugin` → `ha-notify` → Configure options:
+```bash
+claude plugin marketplace add PProvost/claude-code-ha-notify
+claude plugin install ha-notify@ha-notify \
+  --config webhook_url='http://<your-ha>:8123/api/webhook/<your-webhook-id>'
+```
 
-| Option | When you need it |
-|---|---|
-| **CA certificate** | Home Assistant uses a certificate from an internal CA |
-| **Skip certificate checks** | Last resort; sends with `curl -k` |
+**Set `webhook_url` or nothing happens.** It is the one required option, and
+without it the hook logs to stderr and exits 0 — silently, so it can never block
+Claude Code. That is the right behaviour for a notifier and a confusing one to
+debug, so check it is set:
+
+```bash
+claude plugin install ha-notify@ha-notify   # prints how many options are unset
+```
+
+The webhook ID in that URL is effectively a password, so it is stored as a
+sensitive value — in the macOS Keychain, or in `~/.claude/.credentials.json` on
+Linux — never in `settings.json`.
+
+Two optional settings. Nothing prompts for these; name them when you want them,
+and skip both unless your Home Assistant uses TLS:
+
+| Option | When you need it | Set it with |
+|---|---|---|
+| `ca_cert` | Home Assistant uses a certificate from an internal CA | `--config ca_cert=/path/to/ca.pem` |
+| `insecure_tls` | Last resort; sends with `curl -k` | `--config insecure_tls=true` |
+
+To change any of them later: `/plugin configure ha-notify@ha-notify` in an
+interactive session, or re-run the `claude plugin install ... --config` line.
+Non-sensitive values land in `pluginConfigs` in `~/.claude/settings.json`.
 
 Each has an environment-variable override, which is also how you point a single
 project somewhere else:
