@@ -144,17 +144,26 @@ depends on how it gets switched.
 Your webhook URL is:
 
 ```
-https://<your-home-assistant>/api/webhook/<claude_code_webhook_id>
+http://<your-home-assistant>:8123/api/webhook/<claude_code_webhook_id>
 ```
+
+**Include the port.** Home Assistant listens on 8123, and that is the port you
+need unless you have put a reverse proxy in front of it — in which case use
+whatever host and port the proxy serves, and `https`. A URL without the port
+quietly connects to nothing.
 
 Set up [the Claude Code side](../README.md#part-2--claude-code) with that URL,
 then send a test event:
 
 ```bash
-curl -X POST -H 'Content-Type: application/json' \
+curl -i -X POST -H 'Content-Type: application/json' \
   -d '{"event":"stop","project":"test","message":"Hello from curl"}' \
-  https://<your-home-assistant>/api/webhook/<your-webhook-id>
+  http://<your-home-assistant>:8123/api/webhook/<your-webhook-id>
 ```
+
+`-i` shows the status line: `200 OK` means Home Assistant accepted it, and
+anything else (or a connection error) means the request never reached the
+automation.
 
 Your phone should notify within a second or two, with three buttons. If it does
 not, see below.
@@ -169,13 +178,30 @@ Work down this list — it is ordered by how often each one is the cause.
 2. **No trace at all?** The request never reached the automation. The webhook is
    `local_only: true`, so it only accepts requests from your own network. Check
    the webhook ID matches your secret, and that you used `POST`.
-3. **A trace that reaches the end, but no notification?** The
-   `claude_code_notify_service` secret is probably wrong. Call it by hand under
-   Developer tools → Actions.
-4. **Nothing at night.** Expected: events are held in `todo.claude_pending` and
+3. **"Action notify.<something> not found" in the trace?** You have the notify
+   *entity* id where a *service* name belongs. The companion app registers two
+   different things for your phone:
+
+   | | Looks like | Carries `data:`? |
+   |---|---|---|
+   | Notify entity | `notify.peter_s_iphone_15` | No — message and title only |
+   | Legacy service | `notify.mobile_app_peter_s_iphone_15` | Yes |
+
+   This package needs the **legacy service**, because the buttons, the `tag`
+   that lets a notification be dismissed remotely, and
+   `push.interruption-level` all travel inside `data:`, which
+   `notify.send_message` has no field for. Find the right name under
+   **Developer tools → Actions**, search `notify.mobile_app`, and put that in
+   `claude_code_notify_service`.
+
+4. **A trace that reaches the end, but still no notification?** Call your
+   `notify.mobile_app_*` action by hand under Developer tools → Actions. If
+   that does not reach your phone, the problem is the companion app, not this
+   package.
+5. **Nothing at night.** Expected: events are held in `todo.claude_pending` and
    released when night mode turns off. Check
    `input_boolean.claude_night_mode`.
-5. **One project is silent.** It is probably muted from the phone. Look in
+6. **One project is silent.** It is probably muted from the phone. Look in
    `todo.claude_muted` — each item is a project name whose description is the
    Unix time the mute ends. Delete the item to unmute immediately.
 
@@ -189,6 +215,15 @@ Work down this list — it is ordered by how often each one is the cause.
   thing standing between the internet and your notifications.
 - **Tested on iOS.** The `priority`, `ttl` and `channel` keys for Android are
   included but untested; iOS ignores them.
+- **Why the legacy notify action.** The buttons, the `tag`, the `group` and
+  `push.interruption-level` all travel inside `data:`, and the entity-based
+  `notify.send_message` has no `data` field - only `message` and `title`. The
+  companion app's own
+  [actionable notifications guide](https://companion.home-assistant.io/docs/notifications/actionable-notifications/)
+  uses `notify.mobile_app_<device>` with `data:` for the same reason, and the
+  notify integration does not mark it deprecated. (What *is* deprecated there
+  is category-based notifications, `push: category:`, which this package does
+  not use - it uses the current inline `actions:` array.)
 - **Desk mute and phone mute are separate.** The **Ignore** button writes to
   `todo.claude_muted` and makes Home Assistant drop events it receives. The desk
   mute (`/ha-notify:mute`) stops them being sent at all, and keeps working when
