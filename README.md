@@ -4,9 +4,10 @@ Send Claude Code events to your phone through Home Assistant, so you know when
 Claude has finished a turn, needs a permission, or is waiting for you — while
 you are away from the desk.
 
-> **Status:** the Claude Code side is built and tested; the Home Assistant side
-> is not written yet, so the chain does not work end to end. The full design
-> lives in [docs/design-spec.md](docs/design-spec.md).
+> **Status:** both halves are written, linted and tested as far as they can be
+> without a live Home Assistant. Nobody has run the chain end to end yet, so
+> expect to shake out one or two things on first install. The full design lives
+> in [docs/design-spec.md](docs/design-spec.md).
 
 ```
 Claude Code hook ──HTTP POST (JSON)──▶ Home Assistant webhook ──▶ companion app ──▶ phone
@@ -41,9 +42,11 @@ side needs the webhook URL it gives you.
 
 ### Part 1 — Home Assistant
 
-_(not yet available)_ — will be `home-assistant/`: one YAML package holding the
-automations, scripts, and helpers, plus two Local To-do lists you create in the
-UI. See section 5 of the [design spec](docs/design-spec.md) for what it contains.
+One YAML package, two secrets, and two Local To-do lists you create in the UI.
+**Needs Home Assistant 2024.10 or newer.**
+
+Full steps, and what to check when nothing arrives:
+**[home-assistant/README.md](home-assistant/README.md)**.
 
 ### Part 2 — Claude Code
 
@@ -156,9 +159,20 @@ need a second credential.
 ```bash
 tests/run-tests.sh              # 66 tests, no network: dry runs and a fake curl
 tests/run-tests.sh mute         # just the groups whose name matches
+tests/check-ha-package.py       # 32 structural checks on the YAML package
 shellcheck -x claude-code/scripts/notify.sh claude-code/bin/notify-mute claude-code/lib/project.sh
+yamllint -c .yamllint home-assistant/packages .github/workflows
 claude plugin validate --strict ./claude-code
 ```
+
+CI runs all of it, on Linux and macOS for the shell scripts.
+
+`tests/check-ha-package.py` cross-references the package: every script called
+exists, every variable passed to a script is one of its declared fields, every
+required field is supplied, every entity resolves, and the `!secret` names match
+`secrets.example.yaml`. It cannot tell you Home Assistant will accept the file —
+only your instance can — but it catches the typos that would otherwise fail
+silently at 3am.
 
 ## License
 

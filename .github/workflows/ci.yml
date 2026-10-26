@@ -75,7 +75,15 @@ jobs:
           PY
 
       - name: yamllint
-        run: yamllint -c .yamllint .github/workflows .yamllint
+        run: |
+          yamllint -c .yamllint \
+            .github/workflows \
+            .yamllint \
+            home-assistant/packages \
+            home-assistant/secrets.example.yaml
+
+      - name: Home Assistant package structure
+        run: tests/check-ha-package.py
 
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code

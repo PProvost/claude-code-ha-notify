@@ -1,0 +1,542 @@
+---
+# Claude Code -> phone, through Home Assistant.
+#
+# Receives Claude Code hook events on a local-only webhook and sends them to
+# your phone with buttons and reminders. At night it holds them until morning.
+# See home-assistant/README.md for the install steps.
+#
+# Needs two values in secrets.yaml (see secrets.example.yaml):
+#   claude_code_webhook_id
+#   claude_code_notify_service
+#
+# Needs two Local To-do lists, created in the UI, with these entity IDs:
+#   todo.claude_muted     projects silenced from the phone ("Ignore 1h")
+#   todo.claude_pending   events held overnight
+#
+# The payload this expects is documented in the repository README.
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+input_boolean:
+  claude_night_mode:
+    name: Claude night mode
+    icon: mdi:weather-night
+
+# These deliberately have no `initial:`. With one, Home Assistant would reset
+# the time on every restart and throw away your setting; without one, the times
+# you set are remembered. A fresh install therefore starts at 00:00, which the
+# night schedule below treats as "not configured" rather than switching night
+# mode on and off at midnight.
+input_datetime:
+  claude_night_start:
+    name: Claude night mode starts
+    has_date: false
+    has_time: true
+    icon: mdi:weather-night
+  claude_night_end:
+    name: Claude night mode ends
+    has_date: false
+    has_time: true
+    icon: mdi:weather-sunset-up
+
+# ---------------------------------------------------------------------------
+# Automations
+# ---------------------------------------------------------------------------
+
+automation:
+  - id: claude_code_phone
+    alias: Claude Code -> phone
+    description: >-
+      Receives Claude Code hook events over a local-only webhook. 'clear' (you
+      answered at your desk) removes the project's notification and held event.
+      Muted projects (todo.claude_muted) are skipped. In night mode the newest
+      event per project is held in todo.claude_pending for the morning.
+      Otherwise script.claude_code_notify sends it with buttons and reminders.
+    mode: parallel
+    max: 25
+    triggers:
+      - trigger: webhook
+        webhook_id: !secret claude_code_webhook_id
+        allowed_methods:
+          - POST
+        local_only: true
+    conditions:
+      - condition: template
+        value_template: '{{ trigger.json is defined }}'
+    variables:
+      body: >-
+        {{ trigger.json.message | default('Finished its turn') | truncate(240) }}
+      kind: "{{ trigger.json.event | default('stop') }}"
+      project: "{{ trigger.json.project | default('Claude Code') }}"
+      ts: '{{ now().timestamp() }}'
+    actions:
+      - if:
+          - condition: template
+            value_template: "{{ kind == 'clear' }}"
+        then:
+          # Stops the reminders for this project.
+          - event: claude_code_update
+            event_data:
+              project: '{{ project }}'
+          - action: !secret claude_code_notify_service
+            data:
+              message: clear_notification
+              data:
+                tag: claude-code-{{ project | slugify }}
+          # Removes a held night event for this project.
+          - action: script.claude_code_hold
+            data:
+              kind: clear
+              project: '{{ project }}'
+          - stop: Cleared
+
+      - action: todo.get_items
+        data:
+          status: needs_action
+        target:
+          entity_id: todo.claude_muted
+        response_variable: muted
+      - variables:
+          mute_until: >-
+            {{ (muted['todo.claude_muted']['items']
+                | selectattr('summary', 'eq', project)
+                | map(attribute='description') | map('float', 0) | list + [0]) | max }}
+      - if:
+          - condition: template
+            value_template: '{{ mute_until | float(0) > now().timestamp() }}'
+        then:
+          - stop: Project is muted
+
+      - if:
+          - condition: state
+            entity_id: input_boolean.claude_night_mode
+            state: 'on'
+        then:
+          - event: claude_code_update
+            event_data:
+              project: '{{ project }}'
+          - action: script.claude_code_hold
+            data:
+              body: '{{ body }}'
+              kind: '{{ kind }}'
+              project: '{{ project }}'
+              ts: '{{ ts }}'
+          - stop: Held for the morning
+
+      - action: script.turn_on
+        target:
+          entity_id: script.claude_code_notify
+        data:
+          variables:
+            body: '{{ body }}'
+            kind: '{{ kind }}'
+            project: '{{ project }}'
+            ts: '{{ ts }}'
+
+  - id: claude_code_night_mode
+    alias: Claude Code -> night mode schedule
+    description: >-
+      Turns Claude night mode on and off at the times in
+      input_datetime.claude_night_start and claude_night_end. Delete this
+      automation if another signal should control night mode instead. While both
+      times are still 00:00 (a fresh install) it does nothing.
+    mode: single
+    triggers:
+      - trigger: time
+        at: input_datetime.claude_night_start
+        id: night_on
+      - trigger: time
+        at: input_datetime.claude_night_end
+        id: night_off
+    conditions:
+      - condition: template
+        value_template: >-
+          {{ states('input_datetime.claude_night_start')
+             != states('input_datetime.claude_night_end') }}
+    actions:
+      - choose:
+          - conditions:
+              - condition: trigger
+                id: night_on
+            sequence:
+              - action: input_boolean.turn_on
+                target:
+                  entity_id: input_boolean.claude_night_mode
+          - conditions:
+              - condition: trigger
+                id: night_off
+            sequence:
+              - action: input_boolean.turn_off
+                target:
+                  entity_id: input_boolean.claude_night_mode
+
+  - id: claude_code_morning_release
+    alias: Claude Code -> morning release
+    description: >-
+      When Claude night mode turns off, sends the held Claude Code events
+      (todo.claude_pending) in the order they came, each with the normal buttons
+      and reminders, then empties the list.
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.claude_night_mode
+        from: 'on'
+        to: 'off'
+    conditions: []
+    actions:
+      - action: todo.get_items
+        data:
+          status: needs_action
+        target:
+          entity_id: todo.claude_pending
+        response_variable: pending
+      - variables:
+          held: >-
+            {% set ns = namespace(l=[]) %}
+            {% for i in pending['todo.claude_pending']['items'] %}
+              {% set d = (i.description or '{}') | from_json %}
+              {% set ns.l = ns.l + [{'uid': i.uid,
+                                     'project': i.summary,
+                                     'kind': d.kind | default('stop'),
+                                     'body': d.body | default(''),
+                                     'ts': d.ts | default(0) | float}] %}
+            {% endfor %}
+            {{ ns.l | sort(attribute='ts') }}
+      - repeat:
+          for_each: '{{ held }}'
+          sequence:
+            - action: todo.remove_item
+              data:
+                item: '{{ repeat.item.uid }}'
+              target:
+                entity_id: todo.claude_pending
+            - action: script.turn_on
+              target:
+                entity_id: script.claude_code_notify
+              data:
+                variables:
+                  body: '{{ repeat.item.body }}'
+                  kind: '{{ repeat.item.kind }}'
+                  project: '{{ repeat.item.project }}'
+                  ts: '{{ repeat.item.ts }}'
+            # Keeps the arrival order on the phone.
+            - delay: '00:00:02'
+
+# ---------------------------------------------------------------------------
+# Scripts
+# ---------------------------------------------------------------------------
+
+script:
+  claude_code_notify:
+    alias: 'Claude Code: notify phone'
+    description: >-
+      Sends one Claude Code event to the phone with Dismiss / Remind me /
+      Ignore buttons, then reminds on an interval until you act. Stops on a
+      button, a newer event or clear for the same project (the
+      claude_code_update event), or when night mode turns on, in which case the
+      event is held for the morning. The timings are in the variables block at
+      the top of the sequence.
+    icon: mdi:cellphone-message
+    mode: parallel
+    max: 25
+    fields:
+      project:
+        name: Project
+        required: true
+        selector:
+          text: {}
+      kind:
+        name: Kind
+        required: true
+        selector:
+          select:
+            options:
+              - stop
+              - permission
+              - idle
+      body:
+        name: Message
+        selector:
+          text: {}
+      ts:
+        name: Event time (Unix seconds)
+        selector:
+          number:
+            min: 0
+            max: 9999999999
+            mode: box
+    sequence:
+      # Change the timings here. run_id is unique for each run: runs started by
+      # one caller share context.id, so that cannot be used to tell them apart.
+      - variables:
+          reminder_interval: '00:10:00'
+          reminder_count: 3
+          snooze_for: '00:05:00'
+          ignore_minutes: 60
+          run_id: >-
+            {{ project | slugify }}_{{ (now().timestamp() * 1000) | int }}_{{ range(99999) | random }}
+      - variables:
+          done: false
+          ev_ts: '{{ ts | default(now().timestamp(), true) | float }}'
+          id_dismiss: CC_DISMISS_{{ run_id }}
+          id_ignore: CC_IGNORE_{{ run_id }}
+          id_snooze: CC_SNOOZE_{{ run_id }}
+          resend: false
+          sends_left: '{{ reminder_count }}'
+          slug: '{{ project | slugify }}'
+          subtitle: >-
+            {{ {'permission': '⚠️ Needs permission',
+                'idle': '❓ Waiting for you'}.get(kind, '✅ Finished') }}
+          tag: claude-code-{{ project | slugify }}
+      # Tells older runs for this project to stop their reminders.
+      - event: claude_code_update
+        event_data:
+          project: '{{ project }}'
+      - repeat:
+          sequence:
+            - action: !secret claude_code_notify_service
+              data:
+                title: '{{ project }}'
+                message: "{{ body if body else 'Finished its turn' }}"
+                data:
+                  tag: '{{ tag }}'
+                  group: '{{ tag }}'
+                  subtitle: "{{ subtitle }}{{ ' · reminder' if resend else '' }}"
+                  push:
+                    interruption-level: time-sensitive
+                  # Android only; iOS ignores these three.
+                  priority: high
+                  ttl: 0
+                  channel: Claude Code
+                  actions:
+                    - action: '{{ id_dismiss }}'
+                      title: Dismiss
+                    - action: '{{ id_snooze }}'
+                      title: Remind me later
+                    - action: '{{ id_ignore }}'
+                      title: Ignore
+                      destructive: true
+            - wait_for_trigger:
+                - trigger: event
+                  id: dismiss
+                  event_type: mobile_app_notification_action
+                  event_data:
+                    action: '{{ id_dismiss }}'
+                - trigger: event
+                  id: snooze
+                  event_type: mobile_app_notification_action
+                  event_data:
+                    action: '{{ id_snooze }}'
+                - trigger: event
+                  id: ignore
+                  event_type: mobile_app_notification_action
+                  event_data:
+                    action: '{{ id_ignore }}'
+                - trigger: event
+                  id: superseded
+                  event_type: claude_code_update
+                  event_data:
+                    project: '{{ project }}'
+                - trigger: state
+                  id: night
+                  entity_id: input_boolean.claude_night_mode
+                  to: 'on'
+              timeout: '{{ reminder_interval }}'
+              continue_on_timeout: true
+            - variables:
+                resend: true
+                result: "{{ wait.trigger.id if wait.trigger else 'timeout' }}"
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ result == 'dismiss' }}"
+                  sequence:
+                    - action: !secret claude_code_notify_service
+                      data:
+                        message: clear_notification
+                        data:
+                          tag: '{{ tag }}'
+                    - variables:
+                        done: true
+
+                - conditions:
+                    - condition: template
+                      value_template: "{{ result == 'ignore' }}"
+                  sequence:
+                    - action: !secret claude_code_notify_service
+                      data:
+                        message: clear_notification
+                        data:
+                          tag: '{{ tag }}'
+                    - action: todo.get_items
+                      data:
+                        status: needs_action
+                      target:
+                        entity_id: todo.claude_muted
+                      response_variable: muted
+                    - repeat:
+                        for_each: >-
+                          {{ muted['todo.claude_muted']['items']
+                             | selectattr('summary', 'eq', project)
+                             | map(attribute='uid') | list }}
+                        sequence:
+                          - action: todo.remove_item
+                            data:
+                              item: '{{ repeat.item }}'
+                            target:
+                              entity_id: todo.claude_muted
+                    # The description holds the mute end time (Unix seconds).
+                    - action: todo.add_item
+                      data:
+                        item: '{{ project }}'
+                        description: >-
+                          {{ (now() + timedelta(minutes=ignore_minutes)).timestamp() | int }}
+                      target:
+                        entity_id: todo.claude_muted
+                    - variables:
+                        done: true
+
+                - conditions:
+                    - condition: template
+                      value_template: "{{ result == 'superseded' }}"
+                  sequence:
+                    - variables:
+                        done: true
+
+                - conditions:
+                    - condition: template
+                      value_template: "{{ result == 'night' }}"
+                  sequence:
+                    - action: script.claude_code_hold
+                      data:
+                        body: '{{ body }}'
+                        kind: '{{ kind }}'
+                        project: '{{ project }}'
+                        ts: '{{ ev_ts }}'
+                    - variables:
+                        done: true
+
+                - conditions:
+                    - condition: template
+                      value_template: "{{ result == 'snooze' }}"
+                  sequence:
+                    - action: !secret claude_code_notify_service
+                      data:
+                        message: clear_notification
+                        data:
+                          tag: '{{ tag }}'
+                    - wait_for_trigger:
+                        - trigger: event
+                          id: superseded
+                          event_type: claude_code_update
+                          event_data:
+                            project: '{{ project }}'
+                        - trigger: state
+                          id: night
+                          entity_id: input_boolean.claude_night_mode
+                          to: 'on'
+                      timeout: '{{ snooze_for }}'
+                      continue_on_timeout: true
+                    - choose:
+                        - conditions:
+                            - condition: template
+                              value_template: >-
+                                {{ wait.trigger is not none and wait.trigger.id == 'night' }}
+                          sequence:
+                            - action: script.claude_code_hold
+                              data:
+                                body: '{{ body }}'
+                                kind: '{{ kind }}'
+                                project: '{{ project }}'
+                                ts: '{{ ev_ts }}'
+                            - variables:
+                                done: true
+                        - conditions:
+                            - condition: template
+                              value_template: '{{ wait.trigger is not none }}'
+                          sequence:
+                            - variables:
+                                done: true
+                      # After the snooze the loop sends again and the reminders
+                      # start over.
+                      default:
+                        - variables:
+                            sends_left: '{{ reminder_count }}'
+              default:
+                - if:
+                    - condition: template
+                      value_template: '{{ sends_left | int <= 0 }}'
+                  then:
+                    - variables:
+                        done: true
+                  else:
+                    - variables:
+                        sends_left: '{{ sends_left | int - 1 }}'
+          until:
+            - condition: template
+              value_template: '{{ done }}'
+
+  claude_code_hold:
+    alias: 'Claude Code: hold event'
+    description: >-
+      Keeps the newest held Claude Code event for each project in
+      todo.claude_pending (night mode). With kind 'clear' it only removes the
+      project's held event.
+    icon: mdi:inbox-arrow-down
+    mode: queued
+    max: 20
+    fields:
+      project:
+        name: Project
+        required: true
+        selector:
+          text: {}
+      kind:
+        name: Kind
+        required: true
+        selector:
+          text: {}
+      body:
+        name: Message
+        selector:
+          text: {}
+      ts:
+        name: Event time (Unix seconds)
+        selector:
+          number:
+            min: 0
+            max: 9999999999
+            mode: box
+    sequence:
+      - action: todo.get_items
+        data:
+          status: needs_action
+        target:
+          entity_id: todo.claude_pending
+        response_variable: pending
+      # Only the newest event for a project matters, so remove older held ones.
+      - repeat:
+          for_each: >-
+            {{ pending['todo.claude_pending']['items']
+               | selectattr('summary', 'eq', project)
+               | map(attribute='uid') | list }}
+          sequence:
+            - action: todo.remove_item
+              data:
+                item: '{{ repeat.item }}'
+              target:
+                entity_id: todo.claude_pending
+      - if:
+          - condition: template
+            value_template: "{{ kind != 'clear' }}"
+        then:
+          - action: todo.add_item
+            data:
+              item: '{{ project }}'
+              description: >-
+                {{ {'kind': kind, 'body': body | default(''),
+                    'ts': ts | default(now().timestamp(), true) | float} | to_json }}
+            target:
+              entity_id: todo.claude_pending
