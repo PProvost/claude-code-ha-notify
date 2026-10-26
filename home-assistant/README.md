@@ -76,6 +76,45 @@ as a password. Generate one with:
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
+## 4b. Already have the UI-created version? Delete it first
+
+Skip this if you are installing fresh.
+
+If you built these automations and scripts by hand in the UI, remove them
+**before** restarting. The clash is not a clean failure:
+
+- **The two scripts.** `script` is a dict-type domain, so your `scripts.yaml`
+  entry and the package's are deep-merged: the two `sequence` lists are
+  concatenated, and a clashing scalar key aborts the merge part-way through.
+  Home Assistant logs one error and then runs the result anyway.
+- **The three automations.** `automation` is list-type, so old and new coexist.
+  Two automations cannot register the same `webhook_id` - the second is
+  rejected - so roughly half the system stops working.
+- **The night-mode helper.** A UI helper lives in `.storage`, so it never
+  reaches the package merge. It and the package's definition both want
+  `input_boolean.claude_night_mode`, and the loser is silently renamed with a
+  `_2` suffix. No error at all; the automations just point at the wrong entity.
+
+So:
+
+1. **Settings → Automations & scenes** → delete the three `Claude Code`
+   automations.
+2. **Scripts** tab → delete `Claude Code: notify phone` and
+   `Claude Code: hold event`.
+3. **Settings → Devices & services → Helpers** → delete the `Claude night mode`
+   toggle, and any `claude_night_start` / `claude_night_end` helpers you made by
+   hand. The package defines all three.
+4. **Keep both Local To-do lists.** The package does not define them and refers
+   to them by entity ID.
+
+While you are here, generate a fresh `claude_code_webhook_id`: the old one has
+been pasted into chat transcripts and screenshots, and it is the only thing
+protecting the webhook.
+
+On the Claude Code side, remove the old hook entries from the project's
+`.claude/settings.json` before installing the plugin, or every event fires
+twice.
+
 ## 5. Check the configuration and restart
 
 **Developer tools → YAML → Check configuration**, then restart Home Assistant.
