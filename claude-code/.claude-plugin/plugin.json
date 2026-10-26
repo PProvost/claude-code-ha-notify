@@ -1,0 +1,38 @@
+{
+  "name": "ha-notify",
+  "version": "0.1.0",
+  "description": "Sends Claude Code events to your phone through Home Assistant: when Claude finishes a turn, needs a permission, or is waiting for you. Includes a per-project mute you can set from the prompt.",
+  "author": {
+    "name": "Peter Provost",
+    "email": "peter@provost.org"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/PProvost/claude-code-ha-notify",
+  "keywords": [
+    "home-assistant",
+    "notifications",
+    "hooks",
+    "webhook",
+    "mobile"
+  ],
+  "userConfig": {
+    "webhook_url": {
+      "type": "string",
+      "title": "Home Assistant webhook URL",
+      "description": "The full webhook URL, for example https://homeassistant.local:8123/api/webhook/your-webhook-id . Home Assistant webhooks have no login, so the webhook ID is effectively a password - treat this URL as a secret. CLAUDE_NOTIFY_URL overrides it per project.",
+      "required": true,
+      "sensitive": true
+    },
+    "ca_cert": {
+      "type": "file",
+      "title": "CA certificate",
+      "description": "Only needed if your Home Assistant uses a certificate from an internal CA. Passed to curl as --cacert. Overridden by CLAUDE_NOTIFY_CACERT."
+    },
+    "insecure_tls": {
+      "type": "boolean",
+      "title": "Skip certificate checks",
+      "description": "Sends with curl -k, which disables certificate checking entirely. Prefer the CA certificate option above. Overridden by CLAUDE_NOTIFY_INSECURE=1.",
+      "default": false
+    }
+  }
+}

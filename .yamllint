@@ -1,0 +1,16 @@
+---
+# Shared by CI and local runs. Home Assistant packages contain long Jinja
+# templates, so the line length is generous and long unbroken strings are
+# allowed; everything else stays at yamllint's defaults.
+extends: default
+
+rules:
+  line-length:
+    max: 140
+    allow-non-breakable-words: true
+    allow-non-breakable-inline-mappings: true
+  truthy:
+    # GitHub Actions uses `on:` as a key.
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1

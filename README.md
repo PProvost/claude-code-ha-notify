@@ -4,9 +4,9 @@ Send Claude Code events to your phone through Home Assistant, so you know when
 Claude has finished a turn, needs a permission, or is waiting for you — while
 you are away from the desk.
 
-> **Status:** design agreed, implementation in progress. The full design lives in
-> [docs/design-spec.md](docs/design-spec.md). The install steps below are marked
-> _(not yet available)_ until the matching folder lands.
+> **Status:** the Claude Code side is built and tested; the Home Assistant side
+> is not written yet, so the chain does not work end to end. The full design
+> lives in [docs/design-spec.md](docs/design-spec.md).
 
 ```
 Claude Code hook ──HTTP POST (JSON)──▶ Home Assistant webhook ──▶ companion app ──▶ phone
@@ -47,9 +47,64 @@ UI. See section 5 of the [design spec](docs/design-spec.md) for what it contains
 
 ### Part 2 — Claude Code
 
-_(not yet available)_ — will be `claude-code/`, installable as a plugin with
-`/plugin install`, or copied in by hand. It asks for your webhook URL at install
-time. See section 4 of the [design spec](docs/design-spec.md).
+```
+/plugin marketplace add PProvost/claude-code-ha-notify
+/plugin install ha-notify
+```
+
+The install asks for your **Home Assistant webhook URL**. The webhook ID in that
+URL is effectively a password, so it is stored as a sensitive value — in the
+macOS Keychain, or in `~/.claude/.credentials.json` on Linux — not in
+`settings.json`.
+
+Two optional settings, under `/plugin` → `ha-notify` → Configure options:
+
+| Option | When you need it |
+|---|---|
+| **CA certificate** | Home Assistant uses a certificate from an internal CA |
+| **Skip certificate checks** | Last resort; sends with `curl -k` |
+
+Each has an environment-variable override, which is also how you point a single
+project somewhere else:
+
+| Variable | Overrides |
+|---|---|
+| `CLAUDE_NOTIFY_URL` | the webhook URL |
+| `CLAUDE_NOTIFY_CACERT` | the CA certificate |
+| `CLAUDE_NOTIFY_INSECURE=1` | turns certificate checking off |
+
+Check it without sending anything:
+
+```bash
+echo '{"hook_event_name":"Stop","cwd":"'"$PWD"'","last_assistant_message":"Test"}' \
+  | CLAUDE_NOTIFY_DRY_RUN=1 CLAUDE_PROJECT_DIR="$PWD" \
+    bash ~/.claude/plugins/cache/*/ha-notify/*/scripts/notify.sh
+```
+
+Can't use plugins? See [claude-code/manual-install.md](claude-code/manual-install.md).
+
+Add `/.claude/notify-muted` to each project's `.gitignore`.
+
+### Muting at the desk
+
+```
+/ha-notify:mute            # show the current state
+/ha-notify:mute on         # quiet for 120 minutes
+/ha-notify:mute on 30      # quiet for 30 minutes
+/ha-notify:mute off
+```
+
+`notify-mute` is also on the Bash tool's PATH, so `! notify-mute on` works
+straight from the prompt without spending a model turn.
+
+### In a devcontainer
+
+Sensitive plugin values live in `~/.claude`, which a rebuild throws away. Keep it
+on a volume:
+
+```jsonc
+"mounts": ["source=${devcontainerId}-claude-config,target=/home/vscode/.claude,type=volume"]
+```
 
 ## Payload contract
 
@@ -96,6 +151,15 @@ need a second credential.
   leaks.
 - Automations defined in YAML are read-only in the Home Assistant UI. Traces
   still work.
+
+## Development
+
+```bash
+tests/run-tests.sh              # 66 tests, no network: dry runs and a fake curl
+tests/run-tests.sh mute         # just the groups whose name matches
+shellcheck -x claude-code/scripts/notify.sh claude-code/bin/notify-mute claude-code/lib/project.sh
+claude plugin validate --strict ./claude-code
+```
 
 ## License
 

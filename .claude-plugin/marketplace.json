@@ -1,0 +1,20 @@
+{
+  "name": "ha-notify",
+  "description": "Home Assistant notifications for Claude Code",
+  "owner": {
+    "name": "Peter Provost",
+    "email": "peter@provost.org"
+  },
+  "plugins": [
+    {
+      "name": "ha-notify",
+      "description": "Sends Claude Code events to your phone through Home Assistant: when Claude finishes a turn, needs a permission, or is waiting for you.",
+      "author": {
+        "name": "Peter Provost"
+      },
+      "category": "productivity",
+      "source": "./claude-code",
+      "homepage": "https://github.com/PProvost/claude-code-ha-notify"
+    }
+  ]
+}

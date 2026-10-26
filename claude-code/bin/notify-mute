@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+#
+# notify-mute - turn the Home Assistant phone notifications off and on for the
+# current project, without touching Home Assistant.
+#
+# Usage:
+#   notify-mute on [minutes]   Mute for `minutes` (default 120). Run it again to restart the clock.
+#   notify-mute off            Remove the mute.
+#   notify-mute status         Show the current state (also the default).
+#
+# The mute is the file .claude/notify-muted in the project, holding the Unix
+# time the mute ends. scripts/notify.sh reads the same file and sends nothing
+# until that time passes - except "clear" events, which are always sent.
+#
+# Add /.claude/notify-muted to the project's .gitignore.
+
+set -u
+
+# Without the library this script cannot tell whether a mute is set, and saying
+# "notifications on" when it does not know would be a lie. Refuse to run.
+HA_NOTIFY_LIB="$(dirname "${BASH_SOURCE[0]}")/../lib/project.sh"
+# shellcheck source-path=SCRIPTDIR/..
+# shellcheck source=lib/project.sh
+if ! . "$HA_NOTIFY_LIB" 2>/dev/null; then
+  echo "$(basename "$0"): cannot load $HA_NOTIFY_LIB - this install is incomplete" >&2
+  exit 1
+fi
+
+DEFAULT_MUTE_MINUTES=120
+
+PROJECT_DIR="$(ha_notify_project_dir "${CLAUDE_PROJECT_DIR:-$PWD}")"
+MUTE_FILE="$(ha_notify_mute_file "$PROJECT_DIR")"
+
+usage() {
+  echo "usage: $(basename "$0") [on [minutes]|off|status]" >&2
+  exit 2
+}
+
+status() {
+  if ha_notify_is_muted "$MUTE_FILE"; then
+    echo "muted until $(ha_notify_clock "$(tr -cd '0-9' < "$MUTE_FILE")")"
+  else
+    echo "notifications on"
+  fi
+}
+
+case "${1:-status}" in
+  on)
+    minutes="${2:-$DEFAULT_MUTE_MINUTES}"
+    case "$minutes" in
+      '' | *[!0-9]*) echo "$(basename "$0"): minutes must be a whole number, got '$minutes'" >&2; exit 2 ;;
+    esac
+    [ "$minutes" -gt 0 ] || { echo "$(basename "$0"): minutes must be more than 0" >&2; exit 2; }
+    mkdir -p "$(dirname "$MUTE_FILE")" || { echo "$(basename "$0"): cannot write to $MUTE_FILE" >&2; exit 1; }
+    echo "$(( $(date +%s) + minutes * 60 ))" > "$MUTE_FILE" || exit 1
+    status
+    ;;
+  off)
+    rm -f "$MUTE_FILE"
+    status
+    ;;
+  status)
+    status
+    ;;
+  *)
+    usage
+    ;;
+esac

@@ -1,0 +1,86 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  scripts:
+    # Both runners matter: the mute clock formats times with `date`, and BSD
+    # (macOS) and GNU (Linux) disagree on the flag for that.
+    name: scripts (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            brew install shellcheck
+          else
+            sudo apt-get update && sudo apt-get install -y shellcheck
+          fi
+
+      - name: shellcheck
+        run: |
+          shellcheck -x \
+            claude-code/scripts/notify.sh \
+            claude-code/bin/notify-mute \
+            claude-code/lib/project.sh \
+            tests/run-tests.sh \
+            tests/helpers.sh
+
+      - name: Tests
+        run: tests/run-tests.sh
+
+  manifests:
+    name: manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JSON is well formed
+        run: |
+          for f in .claude-plugin/marketplace.json \
+                   claude-code/.claude-plugin/plugin.json \
+                   claude-code/hooks/hooks.json; do
+            python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f" && echo "ok $f"
+          done
+
+      - name: Install YAML tooling
+        run: pip install --quiet pyyaml yamllint
+
+      - name: Command frontmatter parses as YAML
+        run: |
+          python3 - <<'PY'
+          import glob, sys, yaml
+          failed = False
+          for path in glob.glob("claude-code/commands/*.md"):
+              text = open(path).read()
+              if not text.startswith("---"):
+                  print(f"{path}: no frontmatter"); failed = True; continue
+              try:
+                  yaml.safe_load(text.split("---")[1])
+                  print(f"ok {path}")
+              except Exception as e:
+                  print(f"{path}: {e}"); failed = True
+          sys.exit(1 if failed else 0)
+          PY
+
+      - name: yamllint
+        run: yamllint -c .yamllint .github/workflows .yamllint
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Validate plugin and marketplace
+        run: |
+          claude plugin validate --strict ./claude-code
+          claude plugin validate --strict .
