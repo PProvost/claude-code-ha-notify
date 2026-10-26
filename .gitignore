@@ -1,0 +1,8 @@
+# Desk mute marker written by bin/notify-mute (see docs/design-spec.md section 4.4)
+/.claude/notify-muted
+
+# Local Home Assistant secrets, should they ever be copied here for testing
+secrets.yaml
+
+# macOS
+.DS_Store
