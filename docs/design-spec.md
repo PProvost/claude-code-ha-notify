@@ -1,9 +1,9 @@
 # claude-code-ha-notify — design
 
-Status: built 2026-10-26. Both halves are written and in CI. The Home Assistant
-side is confirmed working on a live instance: a webhook event reaches the phone
-with buttons. The Claude Code plugin is not yet installed anywhere, and
-`master-table-analysis` has not been migrated (section 9).
+Status: working end to end, 2026-10-26. The plugin is installed, the package is
+loaded, and a finished turn in Claude Code reaches the phone with buttons.
+Untested so far: the reminder loop, the three buttons, night mode and the
+morning release. `master-table-analysis` has not been migrated (section 9).
 
 Origin: the hook and Home Assistant setup built in the `master-table-analysis` project (commits `5cc8a91a`, `e534cf39`).
 
@@ -204,7 +204,7 @@ the rest were verified locally.
 | 5 | `input_datetime` `initial:` | **Omit it**, so the times survive a restart. A fresh install therefore starts at 00:00, so the night schedule no-ops while the two times are equal rather than flipping night mode at midnight. Setting them is an install step |
 | 6 | Is `CLAUDE_PROJECT_DIR` the git top level? | **Not reliably — and it is absent entirely** from the Bash tool environment, where `notify-mute` runs. Both scripts now resolve the project through one shared `lib/project.sh`, preferring the git root, so they cannot disagree about which mute file to read |
 
-### 8b. Three things this design did not anticipate
+### 8b. Four things this design did not anticipate
 
 Each cost a round trip on the first real install, and each is now covered by a
 test or by the install guide.
@@ -223,6 +223,15 @@ test or by the install guide.
    be modernised. Using the entity id gives "Action notify.<name> not found".
 3. **The webhook URL needs the port.** Home Assistant listens on 8123, and a
    URL without it connects to nothing unless a reverse proxy is in front.
+4. **An unconfigured plugin looks exactly like a working one.** `/plugin` does
+   not exist in every environment (the VS Code extension and SDK sessions do
+   not have it), nothing prompts for optional options, and a missing
+   `webhook_url` makes the hook log to stderr and exit 0 — which is correct,
+   since a notifier must never block Claude Code, but leaves no visible
+   difference between "silent because nothing to say" and "silent because
+   unconfigured". `claude plugin install <name>` re-run on an installed plugin
+   reports how many options are unset; that is the check, and the README
+   documents it. A SessionStart warning would be the real fix.
 
 ## 9. Migrating master-table-analysis
 

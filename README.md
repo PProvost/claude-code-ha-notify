@@ -4,10 +4,10 @@ Send Claude Code events to your phone through Home Assistant, so you know when
 Claude has finished a turn, needs a permission, or is waiting for you — while
 you are away from the desk.
 
-> **Status:** both halves are written, linted and tested as far as they can be
-> without a live Home Assistant. Nobody has run the chain end to end yet, so
-> expect to shake out one or two things on first install. The full design lives
-> in [docs/design-spec.md](docs/design-spec.md).
+> **Status:** working end to end on iOS — a finished turn in Claude Code reaches
+> the phone with buttons. The reminder loop, the buttons themselves, night mode
+> and the morning release have not been exercised yet. Android is untested. The
+> full design lives in [docs/design-spec.md](docs/design-spec.md).
 
 ```
 Claude Code hook ──HTTP POST (JSON)──▶ Home Assistant webhook ──▶ companion app ──▶ phone
