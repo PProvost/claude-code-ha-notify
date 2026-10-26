@@ -44,7 +44,19 @@ homeassistant:
 
 ## 3. Copy the package
 
-Copy `packages/claude_code_notify.yaml` to `/config/packages/`.
+Copy `packages/claude_code_notify.yaml` to `/config/packages/`, so you end up
+with `/config/packages/claude_code_notify.yaml`.
+
+A subfolder works too — `!include_dir_named` searches subdirectories, and keys
+each package by the filename alone, so
+`/config/packages/claude-code-ha-notify/claude_code_notify.yaml` loads as the
+same package. It buys you nothing here, though: because the key is the filename
+with the path thrown away, two files of the same name in different subfolders
+would collide rather than being kept apart.
+
+**Copy the one file, not this repository.** The search is recursive, so a clone
+under `/config/packages/` would also pick up `secrets.example.yaml` and try to
+load it as a package, and Check configuration would fail on it.
 
 ## 4. Add the two secrets
 
