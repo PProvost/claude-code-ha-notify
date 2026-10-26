@@ -246,7 +246,8 @@ script:
         name: Project
         required: true
         selector:
-          text: {}
+          text:
+            multiline: false
       kind:
         name: Kind
         required: true
@@ -259,7 +260,8 @@ script:
       body:
         name: Message
         selector:
-          text: {}
+          text:
+            multiline: true
       ts:
         name: Event time (Unix seconds)
         selector:
@@ -492,16 +494,19 @@ script:
         name: Project
         required: true
         selector:
-          text: {}
+          text:
+            multiline: false
       kind:
         name: Kind
         required: true
         selector:
-          text: {}
+          text:
+            multiline: false
       body:
         name: Message
         selector:
-          text: {}
+          text:
+            multiline: true
       ts:
         name: Event time (Unix seconds)
         selector:

@@ -192,6 +192,17 @@ def main():
           "secrets.example.yaml documents nothing unused",
           f"unused: {sorted(documented - used_secrets)}")
 
+    # --- nothing empty -----------------------------------------------------
+    # Home Assistant's package merge drops empty mappings, so a key whose value
+    # is {} silently disappears from the merged configuration.
+    empty = []
+    for path, node in walk(config):
+        if isinstance(node, dict) and not node and path:
+            empty.append(".".join(str(p) for p in path))
+    check(not empty,
+          "no value in the package is an empty mapping",
+          f"dropped by the package merge: {empty}")
+
     # --- the payload contract ----------------------------------------------
     # The webhook handles 'clear' itself and never passes it on, so the notify
     # script's selector must offer the other three and not clear.
