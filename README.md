@@ -48,8 +48,7 @@ UI. See section 5 of the [design spec](docs/design-spec.md) for what it contains
 ### Part 2 — Claude Code
 
 ```
-/plugin marketplace add PProvost/claude-code-ha-notify
-/plugin install ha-notify
+/plugin install ha-notify --marketplace PProvost/claude-code-ha-notify
 ```
 
 The install asks for your **Home Assistant webhook URL**. The webhook ID in that
