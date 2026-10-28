@@ -462,6 +462,69 @@ test_broken_install() {
   assert_not_contains "no misleading status" "notifications on" "$out"
 }
 
+# ---- codex ------------------------------------------------------------------
+
+# Codex has its own hooks engine with the same stdin-JSON shape. Stop and
+# UserPromptSubmit carry the same field names as Claude Code's, so they work
+# unchanged; PermissionRequest is Codex's stand-in for the permission half of
+# Claude Code's Notification event. There is no Codex equivalent of idle.
+# See codex/README.md.
+test_codex() {
+  group "codex" || return 0
+  local project out
+  project="$(make_project my-repo)"
+
+  # Deliberately without CLAUDE_PROJECT_DIR: Codex does not set it, and the
+  # project name has to come from the payload's cwd instead.
+  run_codex() {
+    env -u CLAUDE_PROJECT_DIR CLAUDE_NOTIFY_DRY_RUN=1 \
+      CLAUDE_NOTIFY_URL=http://ha.test/hook bash "$NOTIFY_SH"
+  }
+
+  it "handles a Codex finished turn"
+  out="$(codex_stop "$project" "Refactored the parser." | run_codex)"
+  assert_eq "payload" \
+    '{"event":"stop","project":"my-repo","message":"Refactored the parser."}' "$out"
+
+  it "handles a Codex prompt submission"
+  out="$(codex_prompt_submit "$project" "now add tests" | run_codex)"
+  assert_eq "payload" '{"event":"clear","project":"my-repo"}' "$out"
+
+  it "respects stop_hook_active from Codex"
+  out="$(codex_stop "$project" "still going" true | run_codex)"
+  assert_empty "no payload" "$out"
+
+  it "turns a Codex permission request into a permission event"
+  out="$(codex_permission_request "$project" Bash "rm -rf /tmp/x" | run_codex)"
+  assert_contains "event kind" '"event":"permission"' "$out"
+
+  it "uses the command as the message, so you can see what is being asked"
+  assert_contains "the command" '"message":"rm -rf /tmp/x"' "$out"
+
+  it "names the tool when a permission request carries no command"
+  out="$(codex_permission_request "$project" apply_patch "" | run_codex)"
+  assert_contains "the tool name" '"message":"Wants to use apply_patch"' "$out"
+
+  it "falls back to a generic message when a permission request carries neither"
+  out="$(codex_permission_request "$project" "" "" | run_codex)"
+  assert_contains "a default message" '"message":"Needs your approval"' "$out"
+
+  it "reads the webhook URL from HA_NOTIFY_URL"
+  out="$(codex_stop "$project" "Done." | env -u CLAUDE_PROJECT_DIR -u CLAUDE_NOTIFY_URL \
+    CLAUDE_NOTIFY_DRY_RUN=1 HA_NOTIFY_URL=http://ha.test/hook bash "$NOTIFY_SH")"
+  assert_contains "a payload" '"event":"stop"' "$out"
+
+  it "lets CLAUDE_NOTIFY_URL win over HA_NOTIFY_URL"
+  out="$(codex_stop "$project" "Done." | env -u CLAUDE_PROJECT_DIR \
+    CLAUDE_NOTIFY_URL=http://chosen.test/hook HA_NOTIFY_URL=http://other.test/hook \
+    bash "$NOTIFY_SH" 2>&1)"
+  assert_not_contains "not the HA_NOTIFY_URL one" "other.test" "$out"
+
+  it "still ignores Codex events it has no mapping for"
+  out="$(jq -nc --arg c "$project" '{hook_event_name: "PostToolUse", cwd: $c, tool_name: "Bash"}' | run_codex)"
+  assert_empty "no payload" "$out"
+}
+
 # ---- run --------------------------------------------------------------------
 
 test_payload
@@ -472,6 +535,7 @@ test_transport
 test_message
 test_layout
 test_broken_install
+test_codex
 
 printf '\n%d test(s), %d failure(s)\n' "$TESTS_RUN" "$TESTS_FAILED"
 [ "$TESTS_FAILED" -eq 0 ]

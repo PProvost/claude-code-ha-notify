@@ -1,0 +1,38 @@
+{
+  "description": "ha-notify: send Codex events to Home Assistant",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "HA_NOTIFY_URL=\"$(cat \"$HOME/.codex/ha-notify/webhook-url\" 2>/dev/null)\" bash \"$HOME/.codex/ha-notify/hooks/notify.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "HA_NOTIFY_URL=\"$(cat \"$HOME/.codex/ha-notify/webhook-url\" 2>/dev/null)\" bash \"$HOME/.codex/ha-notify/hooks/notify.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "HA_NOTIFY_URL=\"$(cat \"$HOME/.codex/ha-notify/webhook-url\" 2>/dev/null)\" bash \"$HOME/.codex/ha-notify/hooks/notify.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

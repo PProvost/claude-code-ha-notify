@@ -10,11 +10,17 @@
 #   UserPromptSubmit  You answered at the desk. Home Assistant then removes the
 #                     notification and stops the reminders for this project.
 #
+# Codex sends the same shape of input to its own hooks engine, and additionally:
+#   PermissionRequest Codex is about to ask you to approve something. Codex has
+#                     no Notification event, so this stands in for it there.
+# See codex/README.md.
+#
 # Reads the hook input (JSON) on stdin and posts:
 #   {"event": "<stop|permission|idle|clear>", "project": "<name>", "message": "<text>"}
 #
 # Configuration, in order of precedence:
 #   CLAUDE_NOTIFY_URL      / webhook_url option    The webhook URL (required)
+#   HA_NOTIFY_URL                                  Alias for CLAUDE_NOTIFY_URL
 #   CLAUDE_NOTIFY_CACERT   / ca_cert option        CA certificate for curl --cacert
 #   CLAUDE_NOTIFY_INSECURE / insecure_tls option   Send with curl -k
 #
@@ -49,9 +55,10 @@ if ! . "$HA_NOTIFY_LIB" 2>/dev/null; then
 fi
 
 # The webhook URL. CLAUDE_NOTIFY_URL wins, so a project or a manual install can
-# override the value set once at plugin install time. There is no default: a
-# guessed URL would silently post nowhere.
-HA_WEBHOOK_URL="${CLAUDE_NOTIFY_URL:-${CLAUDE_PLUGIN_OPTION_WEBHOOK_URL:-}}"
+# override the value set once at plugin install time. HA_NOTIFY_URL is an alias
+# for harnesses other than Claude Code, where a CLAUDE_ prefix reads oddly.
+# There is no default: a guessed URL would silently post nowhere.
+HA_WEBHOOK_URL="${CLAUDE_NOTIFY_URL:-${HA_NOTIFY_URL:-${CLAUDE_PLUGIN_OPTION_WEBHOOK_URL:-}}}"
 
 # TLS. Certificate checking stays on unless explicitly turned off.
 HA_CACERT="${CLAUDE_NOTIFY_CACERT:-${CLAUDE_PLUGIN_OPTION_CA_CERT:-}}"
@@ -64,7 +71,7 @@ HA_INSECURE="${CLAUDE_NOTIFY_INSECURE:-}"
 command -v jq   >/dev/null 2>&1 || { log "jq is not installed"; exit 0; }
 command -v curl >/dev/null 2>&1 || { log "curl is not installed"; exit 0; }
 [ -n "$HA_WEBHOOK_URL" ] || {
-  log "no webhook URL: set the plugin's webhook_url option or CLAUDE_NOTIFY_URL"
+  log "no webhook URL: set the plugin's webhook_url option, CLAUDE_NOTIFY_URL or HA_NOTIFY_URL"
   exit 0
 }
 
@@ -132,6 +139,18 @@ case "$hook_event" in
     kind="idle"
     message="$(field '.tool_input.questions[0].question')"
     [ -n "$message" ] || message="Has a question for you"
+    ;;
+
+  PermissionRequest)
+    # Codex only. It has no Notification event, so this is where permission
+    # prompts come from there. Claude Code never sends it.
+    kind="permission"
+    message="$(field '.tool_input.command')"
+    if [ -z "$message" ]; then
+      tool="$(field '.tool_name')"
+      [ -n "$tool" ] && message="Wants to use $tool"
+    fi
+    [ -n "$message" ] || message="Needs your approval"
     ;;
 
   UserPromptSubmit)

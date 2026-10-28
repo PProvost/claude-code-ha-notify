@@ -50,7 +50,8 @@ jobs:
         run: |
           for f in .claude-plugin/marketplace.json \
                    claude-code/.claude-plugin/plugin.json \
-                   claude-code/hooks/hooks.json; do
+                   claude-code/hooks/hooks.json \
+                   codex/hooks.json; do
             python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$f" && echo "ok $f"
           done
 

@@ -96,6 +96,7 @@ project somewhere else:
 | Variable | Overrides |
 |---|---|
 | `CLAUDE_NOTIFY_URL` | the webhook URL |
+| `HA_NOTIFY_URL` | the same, for harnesses where a `CLAUDE_` prefix reads oddly |
 | `CLAUDE_NOTIFY_CACERT` | the CA certificate |
 | `CLAUDE_NOTIFY_INSECURE=1` | turns certificate checking off |
 
@@ -108,6 +109,11 @@ echo '{"hook_event_name":"Stop","cwd":"'"$PWD"'","last_assistant_message":"Test"
 ```
 
 Can't use plugins? See [claude-code/manual-install.md](claude-code/manual-install.md).
+
+Using **Codex** instead of Claude Code? See [codex/README.md](codex/README.md).
+The hook script is shared, and Codex's `Stop` and `UserPromptSubmit` payloads
+match Claude Code's field for field — but there is no `idle` event there, and
+it is not yet tested against a real install.
 
 Add `/.claude/notify-muted` to each project's `.gitignore`.
 
@@ -181,8 +187,9 @@ need a second credential.
 ## Development
 
 ```bash
-tests/run-tests.sh              # 66 tests, no network: dry runs and a fake curl
+tests/run-tests.sh              # 76 tests, no network: dry runs and a fake curl
 tests/run-tests.sh mute         # just the groups whose name matches
+tests/run-tests.sh codex        # the Codex payload mappings
 tests/check-ha-package.py       # 32 structural checks on the YAML package
 shellcheck -x claude-code/scripts/notify.sh claude-code/bin/notify-mute claude-code/lib/project.sh
 yamllint -c .yamllint home-assistant/packages .github/workflows

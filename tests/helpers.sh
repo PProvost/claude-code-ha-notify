@@ -103,3 +103,30 @@ hook_pretooluse() {
 hook_prompt_submit() {
   jq -nc --arg cwd "$1" '{hook_event_name: "UserPromptSubmit", cwd: $cwd}'
 }
+
+# ---- Codex hook input builders ----------------------------------------------
+# Codex sends one JSON object on stdin like Claude Code does, with the same
+# hook_event_name / cwd / transcript_path fields, so most of the hook is shared.
+# These match the payloads in https://learn.chatgpt.com/docs/hooks.md
+
+codex_stop() {
+  jq -nc --arg cwd "$1" --arg msg "${2:-}" --argjson active "${3:-false}" \
+    '{session_id: "thr_123", transcript_path: null, cwd: $cwd,
+      hook_event_name: "Stop", model: "gpt-5-codex", turn_id: "turn_1",
+      permission_mode: "default", stop_hook_active: $active}
+     + (if $msg == "" then {} else {last_assistant_message: $msg} end)'
+}
+
+codex_prompt_submit() {
+  jq -nc --arg cwd "$1" --arg prompt "${2:-do the thing}" \
+    '{session_id: "thr_123", cwd: $cwd, hook_event_name: "UserPromptSubmit",
+      model: "gpt-5-codex", prompt: $prompt}'
+}
+
+codex_permission_request() {
+  jq -nc --arg cwd "$1" --arg tool "${2:-}" --arg cmd "${3:-}" \
+    '{session_id: "thr_123", cwd: $cwd, hook_event_name: "PermissionRequest",
+      model: "gpt-5-codex", turn_id: "turn_1"}
+     + (if $tool == "" then {} else {tool_name: $tool} end)
+     + (if $cmd == "" then {} else {tool_input: {command: $cmd}} end)'
+}
