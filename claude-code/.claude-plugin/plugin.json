@@ -1,6 +1,6 @@
 {
   "name": "ha-notify",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Sends Claude Code events to your phone through Home Assistant: when Claude finishes a turn, needs a permission, or is waiting for you. Includes a per-project mute you can set from the prompt.",
   "author": {
     "name": "Peter Provost",
