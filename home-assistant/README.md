@@ -44,8 +44,40 @@ homeassistant:
 
 ## 3. Copy the package
 
-Copy `packages/claude_code_notify.yaml` to `/config/packages/`, so you end up
-with `/config/packages/claude_code_notify.yaml`.
+You want `/config/packages/claude_code_notify.yaml`. The simplest way, run on
+the Home Assistant machine itself:
+
+```bash
+mkdir -p /config/packages && cd /config/packages
+
+curl -fsSL -o claude_code_notify.yaml \
+  https://raw.githubusercontent.com/PProvost/claude-code-ha-notify/main/home-assistant/packages/claude_code_notify.yaml
+
+sha256sum claude_code_notify.yaml
+```
+
+That must print:
+
+```
+deedfd268bad828ccb2291f8ea8033d04a1fcc6e8f6ba5084617d312ac9c6dba
+```
+
+If it does not, the download was truncated or modified — fetch it again rather
+than trying to debug the YAML. (Copy-pasting this file through a browser or a
+web editor is what usually damages it: quotes and indentation do not always
+survive.)
+
+The `-f` matters. Without it curl writes a 404 page into the file and you end
+up debugging YAML errors in HTML. If `curl` is missing — some Home Assistant
+shells are busybox-only — this is equivalent:
+
+```bash
+wget -qO claude_code_notify.yaml \
+  https://raw.githubusercontent.com/PProvost/claude-code-ha-notify/main/home-assistant/packages/claude_code_notify.yaml
+```
+
+From a clone of this repository instead, it is just
+`cp home-assistant/packages/claude_code_notify.yaml /config/packages/`.
 
 A subfolder works too — `!include_dir_named` searches subdirectories, and keys
 each package by the filename alone, so

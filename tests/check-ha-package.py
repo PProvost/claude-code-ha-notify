@@ -12,12 +12,15 @@ cannot see.
 Usage: tests/check-ha-package.py [package.yaml]
 """
 
+import hashlib
 import pathlib
+import re
 import sys
 
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+HA_README = ROOT / "home-assistant" / "README.md"
 PACKAGE = (pathlib.Path(sys.argv[1]).resolve() if len(sys.argv) > 1
            else ROOT / "home-assistant" / "packages" / "claude_code_notify.yaml")
 SECRETS_EXAMPLE = ROOT / "home-assistant" / "secrets.example.yaml"
@@ -202,6 +205,21 @@ def main():
     check(not empty,
           "no value in the package is an empty mapping",
           f"dropped by the package merge: {empty}")
+
+    # --- the documented checksum --------------------------------------------
+    # The install guide tells people to curl this file and check its sha256.
+    # A stale hash there is worse than none: it tells someone their correct
+    # file is corrupt. So the hash in the guide has to match the file here.
+    if HA_README.exists():
+        actual = hashlib.sha256(PACKAGE.read_bytes()).hexdigest()
+        documented = re.findall(r"\b([0-9a-f]{64})\b", HA_README.read_text())
+        check(documented,
+              "the install guide documents the package checksum",
+              "no sha256 found in home-assistant/README.md")
+        if documented:
+            check(all(d == actual for d in documented),
+                  "the documented checksum matches the package",
+                  f"guide says {documented}, file is {actual}")
 
     # --- the payload contract ----------------------------------------------
     # The webhook handles 'clear' itself and never passes it on, so the notify
