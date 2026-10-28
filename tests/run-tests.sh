@@ -525,6 +525,68 @@ test_codex() {
   assert_empty "no payload" "$out"
 }
 
+# ---- version bump -----------------------------------------------------------
+
+# Shipping a change to the plugin without bumping its version is invisible:
+# Claude Code decides an update exists by comparing the version in plugin.json,
+# so the new code simply never reaches anyone. This check makes CI say so.
+test_version_bump() {
+  group "version" || return 0
+  local repo rc out
+  local checker="$REPO_ROOT/tests/check-version-bump.sh"
+
+  it "fails when a shipped script changes with no version bump"
+  repo="$(make_plugin_repo)"
+  echo 'echo hello' >> "$repo/claude-code/scripts/notify.sh"
+  commit_fixture "$repo"
+  out="$(bash "$checker" base HEAD "$repo" 2>&1)"; rc=$?
+  assert_eq "exit code" 1 "$rc"
+
+  it "says which files need the bump"
+  assert_contains "the file" "scripts/notify.sh" "$out"
+
+  it "passes when the shipped change comes with a version bump"
+  repo="$(make_plugin_repo)"
+  echo 'echo hello' >> "$repo/claude-code/scripts/notify.sh"
+  set_fixture_version "$repo" 0.2.0
+  commit_fixture "$repo"
+  bash "$checker" base HEAD "$repo" >/dev/null 2>&1; rc=$?
+  assert_eq "exit code" 0 "$rc"
+
+  it "fails when a shipped command changes with no version bump"
+  repo="$(make_plugin_repo)"
+  echo 'more text' >> "$repo/claude-code/commands/mute.md"
+  commit_fixture "$repo"
+  bash "$checker" base HEAD "$repo" >/dev/null 2>&1; rc=$?
+  assert_eq "exit code" 1 "$rc"
+
+  it "ignores the manual install guide, which ships to nobody"
+  repo="$(make_plugin_repo)"
+  echo 'more steps' >> "$repo/claude-code/manual-install.md"
+  commit_fixture "$repo"
+  bash "$checker" base HEAD "$repo" >/dev/null 2>&1; rc=$?
+  assert_eq "exit code" 0 "$rc"
+
+  it "ignores changes outside the plugin"
+  repo="$(make_plugin_repo)"
+  echo 'more words' >> "$repo/README.md"
+  commit_fixture "$repo"
+  bash "$checker" base HEAD "$repo" >/dev/null 2>&1; rc=$?
+  assert_eq "exit code" 0 "$rc"
+
+  it "passes when nothing changed at all"
+  repo="$(make_plugin_repo)"
+  bash "$checker" base HEAD "$repo" >/dev/null 2>&1; rc=$?
+  assert_eq "exit code" 0 "$rc"
+
+  it "accepts a bump that only touches the manifest"
+  repo="$(make_plugin_repo)"
+  set_fixture_version "$repo" 0.1.1
+  commit_fixture "$repo"
+  bash "$checker" base HEAD "$repo" >/dev/null 2>&1; rc=$?
+  assert_eq "exit code" 0 "$rc"
+}
+
 # ---- run --------------------------------------------------------------------
 
 test_payload
@@ -536,6 +598,7 @@ test_message
 test_layout
 test_broken_install
 test_codex
+test_version_bump
 
 printf '\n%d test(s), %d failure(s)\n' "$TESTS_RUN" "$TESTS_FAILED"
 [ "$TESTS_FAILED" -eq 0 ]

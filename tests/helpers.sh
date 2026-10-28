@@ -130,3 +130,36 @@ codex_permission_request() {
      + (if $tool == "" then {} else {tool_name: $tool} end)
      + (if $cmd == "" then {} else {tool_input: {command: $cmd}} end)'
 }
+
+# ---- fixtures for the version-bump check ------------------------------------
+
+# Builds a throwaway repo shaped like this one: a plugin manifest, a shipped
+# script, a shipped command, a doc that does not ship, and a top-level README.
+# Echoes the path. The base commit is tagged "base".
+make_plugin_repo() {
+  local dir
+  dir="$(mktemp -d "${TMPDIR:-/tmp}/ccnotify-ver.XXXXXX")/repo"
+  mkdir -p "$dir"/claude-code/{.claude-plugin,scripts,commands}
+  printf '{\n  "name": "ha-notify",\n  "version": "0.1.0"\n}\n' \
+    > "$dir/claude-code/.claude-plugin/plugin.json"
+  echo '#!/usr/bin/env bash' > "$dir/claude-code/scripts/notify.sh"
+  echo 'run the toggle'     > "$dir/claude-code/commands/mute.md"
+  echo 'manual steps'       > "$dir/claude-code/manual-install.md"
+  echo '# readme'           > "$dir/README.md"
+  git -C "$dir" init -q
+  git -C "$dir" add -A
+  git -C "$dir" -c user.email=t@t -c user.name=t commit -qm base
+  git -C "$dir" tag base
+  echo "$dir"
+}
+
+# Commits whatever is currently in the fixture.
+commit_fixture() {
+  git -C "$1" add -A
+  git -C "$1" -c user.email=t@t -c user.name=t commit -qm "${2:-change}"
+}
+
+set_fixture_version() {
+  printf '{\n  "name": "ha-notify",\n  "version": "%s"\n}\n' "$2" \
+    > "$1/claude-code/.claude-plugin/plugin.json"
+}

@@ -45,6 +45,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The version-bump check compares two commits.
+          fetch-depth: 0
 
       - name: JSON is well formed
         run: |
@@ -85,6 +88,26 @@ jobs:
 
       - name: Home Assistant package structure
         run: tests/check-ha-package.py
+
+      - name: Plugin version bumped when shipped files change
+        env:
+          BASE_SHA: >-
+            ${{ github.event_name == 'pull_request'
+                && github.event.pull_request.base.sha
+                || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          case "$BASE_SHA" in
+            '' | 0000000000000000000000000000000000000000)
+              echo "No base commit to compare against; skipping."
+              exit 0
+              ;;
+          esac
+          if ! git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            echo "Base commit $BASE_SHA is not in this history; skipping."
+            exit 0
+          fi
+          tests/check-version-bump.sh "$BASE_SHA" "$HEAD_SHA"
 
       - name: Install Claude Code
         run: npm install -g @anthropic-ai/claude-code
